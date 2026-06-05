@@ -10,10 +10,13 @@ Group=vortek
 LoadCredential=tw_key:/etc/credstore/tw_key
 #LoadCredential=yt_key:/etc/credstore/yt_key
 #LoadCredential=kick_key:/etc/credstore/kick_key
+
 Restart=always
 RestartSec=10
-ExecStartPre=/opt/247live/scripts/generate_playlist.sh
+TimeoutStartSec=60
+
 ExecStart=/opt/247live/scripts/playout.sh
+
 StandardOutput=journal
 StandardError=journal
 

@@ -1,5 +1,6 @@
 [Unit]
-Description=Restart playout to refresh playlist
+Description=Restart playout to force playlist reshuffle and pick up new clips
+After=playout.service
 
 [Service]
 Type=oneshot

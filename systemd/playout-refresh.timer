@@ -1,9 +1,10 @@
 [Unit]
-Description=Refresh playout playlist every 30 minutes
+Description=Reshuffle playout playlist every 6 hours
 
 [Timer]
-OnBootSec=30min
-OnUnitActiveSec=30min
+OnBootSec=6h
+OnUnitActiveSec=6h
+AccuracySec=1min
 
 [Install]
 WantedBy=timers.target
