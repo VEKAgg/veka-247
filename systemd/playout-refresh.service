@@ -1,0 +1,6 @@
+[Unit]
+Description=Restart playout to refresh playlist
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart playout.service

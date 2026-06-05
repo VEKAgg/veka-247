@@ -11,9 +11,9 @@ if [ -z "${CREDENTIALS_DIRECTORY:-}" ]; then
   exit 1
 fi
 
-YT_KEY=$(cat "$CREDENTIALS_DIRECTORY/yt_key")
 TW_KEY=$(cat "$CREDENTIALS_DIRECTORY/tw_key")
-KICK_KEY=$(cat "$CREDENTIALS_DIRECTORY/kick_key")
+#YT_KEY=$(cat "$CREDENTIALS_DIRECTORY/yt_key")
+#KICK_KEY=$(cat "$CREDENTIALS_DIRECTORY/kick_key")
 # ──────────────────────────────────────────────────────────
 
 # ─── Generate Playlist ───────────────────────────────────
@@ -29,4 +29,6 @@ ffmpeg -re -stream_loop -1 \
   -g 60 -keyint_min 60 -r 30 -pix_fmt yuv420p \
   -c:a aac -b:a 128k -ar 44100 \
   -f tee -map 0:v -map 0:a \
-  "[f=flv]${YT_KEY}|[f=flv]${TW_KEY}|[f=flv]${KICK_KEY}"
+  "[f=flv]rtmp://live.twitch.tv/app/${TW_KEY}"
+
+#"[f=flv]${YT_KEY}|[f=flv]${TW_KEY}|[f=flv]${KICK_KEY}"
