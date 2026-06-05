@@ -40,10 +40,12 @@ sudo systemctl stop playout
 Upload `.mp4`, `.mkv`, `.mov`, `.avi`, `.flv`, or `.ts` files to the `247Live` dataset on TrueNAS.
 
 **From Windows (recommended for clients):**
+
 - Map a network drive to `\\192.168.1.98\247Live`
 - Or use WinSCP: host `192.168.1.98`, port `22`, user `root`
 
 **From Linux/Mac:**
+
 ```bash
 scp *.mp4 root@192.168.1.98:/mnt/tank/247Live/
 ```
@@ -67,13 +69,13 @@ They are passed to the service at runtime via systemd `LoadCredential` — never
 
 ```bash
 # YouTube
-sudo bash -c 'echo -n "rtmp://a.rtmp.youtube.com/live2/YOUR_KEY" > /etc/credstore/yt_key'
+sudo bash -c 'echo -n "YOUR_KEY" > /etc/credstore/yt_key'
 
 # Twitch
-sudo bash -c 'echo -n "rtmp://live.twitch.tv/app/YOUR_KEY" > /etc/credstore/tw_key'
+sudo bash -c 'echo -n "YOUR_KEY" > /etc/credstore/tw_key'
 
 # Kick
-sudo bash -c 'echo -n "rtmp://fa723fc1b171.global-contribute.live-video.net/app/YOUR_KEY" > /etc/credstore/kick_key'
+sudo bash -c 'echo -n "YOUR_KEY" > /etc/credstore/kick_key'
 
 sudo chmod 600 /etc/credstore/*
 sudo systemctl restart playout
