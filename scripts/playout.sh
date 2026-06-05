@@ -57,13 +57,12 @@ run_ffmpeg() {
   local common_args=(
     -hide_banner -loglevel info -re
     -avoid_negative_ts make_zero
-    -err_detect ignore_err
-    -max_muxing_queue_size 1024
-    -f concat -safe 0 -i "$playlist"
+    -f concat -safe 0 -err_detect ignore_err -i "$playlist"
   )
   local encode_args=(
     -c:v libx264 -preset superfast -profile:v high
     -threads 2
+    -max_muxing_queue_size 1024
     -b:v "$VBR" -maxrate "$VBR" -bufsize "$BUF"
     -g "$GOP" -keyint_min "$GOP"
     -af "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo"
