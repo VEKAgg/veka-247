@@ -19,9 +19,22 @@ fi
 
 echo "Found $FILE_COUNT video clips in $CLIP_DIR"
 
+# Build one shuffled pass to a temp file
+TEMP_LIST=$(mktemp)
 find "$CLIP_DIR" -maxdepth 1 -type f \( "${SUPPORTED_FORMATS[@]}" \) \
   | shuf \
   | awk '{printf "file '\''%s'\''\n", $0}' \
-  > "$PLAYLIST"
+  > "$TEMP_LIST"
 
-echo "Playlist generated: $PLAYLIST ($FILE_COUNT files)"
+# Repeat the shuffled list enough times to reach ~2000 total entries.
+# This keeps ffmpeg running for many hours before it needs to restart,
+# avoiding gaps while still picking up new clips on each restart.
+REPEATS=$(( 2000 / FILE_COUNT + 1 ))
+> "$PLAYLIST"
+for i in $(seq 1 "$REPEATS"); do
+  cat "$TEMP_LIST"
+done >> "$PLAYLIST"
+rm -f "$TEMP_LIST"
+
+TOTAL_ENTRIES=$(( FILE_COUNT * REPEATS ))
+echo "Playlist generated: $PLAYLIST ($FILE_COUNT clips × $REPEATS passes = $TOTAL_ENTRIES entries)"

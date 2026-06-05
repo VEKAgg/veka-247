@@ -30,7 +30,6 @@ while true; do
 
   FFMPEG_RC=0
   ffmpeg -hide_banner -re \
-    -stream_loop -1 \
     -f concat -safe 0 -i "$PLAYLIST" \
     -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p" \
     -c:v libx264 -preset superfast -profile:v high \
