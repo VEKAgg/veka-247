@@ -9,8 +9,8 @@ User=vortek
 Group=vortek
 
 LoadCredential=tw_key:/etc/credstore/tw_key
-LoadCredential=yt_key:/etc/credstore/yt_key
-LoadCredential=kick_key:/etc/credstore/kick_key
+#LoadCredential=yt_key:/etc/credstore/yt_key
+#LoadCredential=kick_key:/etc/credstore/kick_key
 
 RuntimeDirectory=247live
 RuntimeDirectoryMode=0755

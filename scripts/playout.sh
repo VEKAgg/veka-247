@@ -37,16 +37,18 @@ esac
 PLATFORMS=("Twitch")
 TGTSTR="[f=flv]${TWITCH_RTMP}/${TW_KEY}"
 
-if [ -s "${CREDENTIALS_DIRECTORY}/yt_key" ]; then
-  YT_KEY=$(cat "${CREDENTIALS_DIRECTORY}/yt_key")
-  TGTSTR+="|[f=flv]${YOUTUBE_RTMP}/${YT_KEY}"
-  PLATFORMS+=("YouTube")
-fi
-if [ -s "${CREDENTIALS_DIRECTORY}/kick_key" ]; then
-  KICK_KEY=$(cat "${CREDENTIALS_DIRECTORY}/kick_key")
-  TGTSTR+="|[f=flv]${KICK_RTMP}/${KICK_KEY}"
-  PLATFORMS+=("Kick")
-fi
+# Uncomment to enable YouTube:
+#if [ -s "${CREDENTIALS_DIRECTORY}/yt_key" ]; then
+#  YT_KEY=$(cat "${CREDENTIALS_DIRECTORY}/yt_key")
+#  TGTSTR+="|[f=flv]${YOUTUBE_RTMP}/${YT_KEY}"
+#  PLATFORMS+=("YouTube")
+#fi
+# Uncomment to enable Kick:
+#if [ -s "${CREDENTIALS_DIRECTORY}/kick_key" ]; then
+#  KICK_KEY=$(cat "${CREDENTIALS_DIRECTORY}/kick_key")
+#  TGTSTR+="|[f=flv]${KICK_RTMP}/${KICK_KEY}"
+#  PLATFORMS+=("Kick")
+#fi
 
 # ── FFmpeg runner (overlay-aware) ─────────────────────────────────────────────
 run_ffmpeg() {
