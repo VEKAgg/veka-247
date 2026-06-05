@@ -30,7 +30,8 @@ SKIPPED=0
 
 for f in "${CANDIDATES[@]}"; do
   if [ "${VALIDATE_CLIPS:-true}" = "true" ]; then
-    if timeout 5 ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$f" >/dev/null 2>&1; then
+    ERR=$(timeout 15 ffmpeg -v error -t 2 -i "$f" -c copy -f null - 2>&1 || true)
+    if [ -z "$ERR" ] || ! echo "$ERR" | grep -qi "error\|invalid"; then
       echo "$f" >> "$TEMP_VALID"
     else
       SKIPPED=$((SKIPPED + 1))
