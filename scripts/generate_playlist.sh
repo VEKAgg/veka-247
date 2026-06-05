@@ -1,40 +1,70 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CLIP_DIR="/srv/clips"
-PLAYLIST="/tmp/playlist.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../config/stream.conf
+source "$SCRIPT_DIR/../config/stream.conf"
+
 SUPPORTED_FORMATS=(-name '*.mp4' -o -name '*.mkv' -o -name '*.mov' -o -name '*.avi' -o -name '*.flv' -o -name '*.ts')
 
-if [ ! -d "$CLIP_DIR" ]; then
-  echo "ERROR: $CLIP_DIR does not exist. Is the NFS mount active?" >&2
+# ── NFS mount check ───────────────────────────────────────────────────────────
+if ! mountpoint -q "$CLIP_DIR" 2>/dev/null; then
+  if [ ! -d "$CLIP_DIR" ]; then
+    systemd-cat -t "$LOG_TAG" -p err echo "CLIP_DIR does not exist: $CLIP_DIR"
+    exit 1
+  fi
+  systemd-cat -t "$LOG_TAG" -p warning echo "WARNING: $CLIP_DIR is not a mount point — NFS may not be active"
+fi
+
+# ── Scan for candidates ───────────────────────────────────────────────────────
+mapfile -t CANDIDATES < <(find "$CLIP_DIR" -maxdepth 1 -type f \( "${SUPPORTED_FORMATS[@]}" \))
+
+if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+  systemd-cat -t "$LOG_TAG" -p err echo "No video files found in $CLIP_DIR"
   exit 1
 fi
 
-FILE_COUNT=$(find "$CLIP_DIR" -maxdepth 1 -type f \( "${SUPPORTED_FORMATS[@]}" \) | wc -l)
+# ── Validate clips (optional) ─────────────────────────────────────────────────
+TEMP_VALID=$(mktemp)
+SKIPPED=0
 
-if [ "$FILE_COUNT" -eq 0 ]; then
-  echo "ERROR: No video files found in $CLIP_DIR" >&2
+for f in "${CANDIDATES[@]}"; do
+  if [ "${VALIDATE_CLIPS:-true}" = "true" ]; then
+    if timeout 5 ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$f" >/dev/null 2>&1; then
+      echo "$f" >> "$TEMP_VALID"
+    else
+      SKIPPED=$((SKIPPED + 1))
+      systemd-cat -t "$LOG_TAG" -p warning echo "SKIP (invalid): $(basename "$f")"
+    fi
+  else
+    echo "$f" >> "$TEMP_VALID"
+  fi
+done
+
+VALID_COUNT=$(wc -l < "$TEMP_VALID")
+
+if [ "$VALID_COUNT" -lt "${PLAYLIST_MIN_CLIPS:-1}" ]; then
+  systemd-cat -t "$LOG_TAG" -p err echo "Not enough valid clips: found $VALID_COUNT (need ${PLAYLIST_MIN_CLIPS:-1})"
+  rm -f "$TEMP_VALID"
   exit 1
 fi
 
-echo "Found $FILE_COUNT video clips in $CLIP_DIR"
+[ "$SKIPPED" -gt 0 ] && systemd-cat -t "$LOG_TAG" -p warning echo "Skipped $SKIPPED invalid clips"
 
-# Build one shuffled pass to a temp file
+# ── Build playlist ────────────────────────────────────────────────────────────
 TEMP_LIST=$(mktemp)
-find "$CLIP_DIR" -maxdepth 1 -type f \( "${SUPPORTED_FORMATS[@]}" \) \
-  | shuf \
-  | awk '{printf "file '\''%s'\''\n", $0}' \
-  > "$TEMP_LIST"
+shuf "$TEMP_VALID" | awk '{printf "file '\''%s'\''\n", $0}' > "$TEMP_LIST"
+rm -f "$TEMP_VALID"
 
-# Repeat the shuffled list enough times to reach ~2000 total entries.
-# This keeps ffmpeg running for many hours before it needs to restart,
-# avoiding gaps while still picking up new clips on each restart.
-REPEATS=$(( 2000 / FILE_COUNT + 1 ))
-> "$PLAYLIST"
-for i in $(seq 1 "$REPEATS"); do
+REPEATS=$(( 2000 / VALID_COUNT + 1 ))
+TEMP_PLAYLIST=$(mktemp)
+for _ in $(seq 1 "$REPEATS"); do
   cat "$TEMP_LIST"
-done >> "$PLAYLIST"
+done >> "$TEMP_PLAYLIST"
 rm -f "$TEMP_LIST"
 
-TOTAL_ENTRIES=$(( FILE_COUNT * REPEATS ))
-echo "Playlist generated: $PLAYLIST ($FILE_COUNT clips × $REPEATS passes = $TOTAL_ENTRIES entries)"
+# Atomic write — prevents ffmpeg reading a half-built playlist
+mv "$TEMP_PLAYLIST" "$PLAYLIST"
+
+TOTAL=$(( VALID_COUNT * REPEATS ))
+systemd-cat -t "$LOG_TAG" echo "Playlist ready: $VALID_COUNT clips × $REPEATS passes = $TOTAL entries"
