@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+
+  # ── ffplayout ─────────────────────────────────────────────────────────────
+  # Handles seamless 24/7 clip playout from /srv/clips (TrueNAS NFS mount)
+  # Web UI: http://<vm-ip>:8787
+  ffplayout:
+    image: ffplayout/ffplayout:latest
+    container_name: ffplayout
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ../config/ffplayout.yml:/etc/ffplayout/ffplayout.yml
+      - /srv/clips:/tv-media                   # TrueNAS NFS mount
+      - /opt/247live/playlists:/playlists
+      - /opt/247live/logs/ffplayout:/var/log/ffplayout
+    environment:
+      - TZ=Asia/Dubai
+    depends_on:
+      - restreamer
+
+  # ── Restreamer ────────────────────────────────────────────────────────────
+  # Receives RTMP from ffplayout, fans out to Twitch / YouTube / Kick
+  # Web UI: http://<vm-ip>:8080
+  # Stream keys are configured in the Restreamer web UI (not /etc/credstore)
+  restreamer:
+    image: datarhei/restreamer:latest
+    container_name: restreamer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP web UI
+      - "8181:8181"   # HTTPS web UI
+      - "1935:1935"   # RTMP ingest (ffplayout pushes here)
+      - "1936:1936"   # RTMPS
+    volumes:
+      - /opt/247live/restreamer/config:/core/config
+      - /opt/247live/restreamer/data:/core/data
+    environment:
+      - TZ=Asia/Dubai
