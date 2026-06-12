@@ -1,9 +1,1 @@
-*.env
 .env
-/tmp/
-*.tmp
-.DS_Store
-Thumbs.db
-overlays/overlay.png
-config/stream.conf.local
-/run/

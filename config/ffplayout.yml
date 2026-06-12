@@ -85,4 +85,4 @@ out:
     -b:a 128k
     -ar 44100
     -f flv
-    rtmp://127.0.0.1:1935/live/2ef521f5-f1d2-450a-8787-fbd7e331ab16.stream
+    rtmp://live.twitch.tv/app/YOUR_TWITCH_STREAM_KEY
