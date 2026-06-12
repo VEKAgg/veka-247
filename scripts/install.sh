@@ -61,9 +61,10 @@ mkdir -p \
   "$INSTALL_DIR/restreamer/data"
 mkdir -p /srv/clips
 chown -R "${REAL_USER}:${REAL_USER}" "$INSTALL_DIR"
+chown -R ffpu:nogroup "$INSTALL_DIR/logs"
 chown "${REAL_USER}:${REAL_USER}" /srv/clips
 chmod 755 /srv/clips
-ok "Directories ready (owned by ${REAL_USER})"
+ok "Directories ready (owned by ${REAL_USER}, logs owned by ffpu)"
 
 # ── NFS ───────────────────────────────────────────────────────────────────────
 step "Checking NFS mount /srv/clips"
