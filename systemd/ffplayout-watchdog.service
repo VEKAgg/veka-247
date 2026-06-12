@@ -1,0 +1,10 @@
+[Unit]
+Description=veka-247 ffplayout watchdog
+After=ffplayout.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ffplayout-watchdog
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ffplayout-watchdog

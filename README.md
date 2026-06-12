@@ -1,8 +1,8 @@
 # veka-247 — 24/7 Live Stream (rta branch)
 
-Docker-based 24/7 livestream stack using **ffplayout** for seamless clip playout and **datarhei Restreamer** for multi-platform output.
+24/7 livestream stack using **ffplayout** (native install) for seamless clip playout and **datarhei Restreamer** (Docker) for multi-platform output.
 
-> **Branch:** `rta` — replaces the bare-metal bash+ffmpeg stack from `dev` with a proper Docker-based playout engine that eliminates stream drops between clips.
+> **Branch:** `rta` — ffplayout runs natively via .deb package, Restreamer runs in Docker.
 
 ---
 
@@ -20,15 +20,15 @@ TrueNAS (192.168.1.98)
         v
   +-----------+        RTMP         +-------------+
   | ffplayout |  --------------->   | Restreamer  |
-  | :8787 UI  |  rtmp://restreamer  | :8080 UI    |
-  +-----------+    :1935/live/247   +------+------+
-                                          |
-                          +---------------+---------------+
-                          v               v               v
-                       Twitch          YouTube           Kick
+  | (systemd) |  rtmp://127.0.0.1   | :8080 UI    |
+  | :8787 UI  |  :1935/live/247live +------+------+
+  +-----------+                             |
+                           +---------------+---------------+
+                           v               v               v
+                        Twitch          YouTube           Kick
 ```
 
-**ffplayout** reads clips from `/srv/clips`, plays them in a seamless loop (no stream drops), and pushes a single encoded RTMP stream to the local Restreamer container. **Restreamer** receives that stream and fans it out to all platforms simultaneously.
+**ffplayout** runs as a systemd service, reads clips from `/srv/clips`, plays them in a seamless loop, and pushes a single encoded RTMP stream to the local Restreamer container. **Restreamer** (Docker) receives that stream and fans it out to all platforms simultaneously.
 
 ---
 
@@ -38,7 +38,7 @@ TrueNAS (192.168.1.98)
 |---|---|---|
 | TrueNAS | 192.168.1.98 | /mnt/tank/247Live |
 | 247Live VM | 192.168.1.6 | /srv/clips (NFS mount) |
-| ffplayout UI | 192.168.1.6:8787 | Docker container |
+| ffplayout UI | 192.168.1.6:8787 | Native systemd service |
 | Restreamer UI | 192.168.1.6:8080 | Docker container |
 
 ---
@@ -65,15 +65,24 @@ In Restreamer → Outputs → Add destination:
 - YouTube: `rtmp://a.rtmp.youtube.com/live2/YOUR_KEY`
 - Kick: `rtmp://fa723fc1b171.global-contribute.live-video.net/app/YOUR_KEY`
 
-### 4. Add clips
+### 4. Add and normalize clips
 
-Drop MP4/MKV files into `/srv/clips` via SMB, WinSCP, or scp:
+If your clips have mixed resolutions or framerates, normalize them first (prevents frame freezes at cut points):
 
 ```bash
-scp clip.mp4 vortek@192.168.1.6:/srv/clips/
+mkdir -p /srv/clips/raw
+# copy your raw clips into /srv/clips/raw, then:
+bash scripts/normalize_clips.sh
+# normalized files land in /srv/clips as *_norm.mp4
 ```
 
-ffplayout picks them up automatically — no restart needed.
+Or drop already-compatible MP4s (720p30, AAC audio) directly into `/srv/clips`:
+
+```bash
+scp clip.mp4 youruser@192.168.1.6:/srv/clips/
+```
+
+ffplayout picks up new clips automatically — no restart needed.
 
 ---
 
@@ -84,12 +93,16 @@ veka-247/
 ├── config/
 │   └── ffplayout.yml        # ffplayout config (output quality, storage path, shuffle)
 ├── docker/
-│   └── docker-compose.yml   # ffplayout + Restreamer containers
+│   └── docker-compose.yml   # Restreamer container only
 ├── overlays/                # Overlay images (for future lower-thirds)
 ├── scripts/
-│   ├── install.sh           # One-command install
+│   ├── install.sh           # One-command install (native ffplayout + Docker Restreamer)
 │   ├── normalize_clips.sh   # Pre-process raw clips to consistent spec
-│   └── status.sh            # Health check
+│   ├── status.sh            # Health check
+│   └── watchdog.sh          # Auto-restart logic (run by systemd timer)
+├── systemd/
+│   ├── ffplayout-watchdog.service
+│   └── ffplayout-watchdog.timer   # Fires every 2 min
 └── .env.example             # Infrastructure reference (no secrets)
 ```
 
@@ -120,7 +133,11 @@ Configured in `config/ffplayout.yml` — default is **720p30 @ 2500k**:
 | Audio | AAC 128k 44100Hz |
 | Encoder | libx264 superfast |
 
-To switch to 1080p60, edit `config/ffplayout.yml` and change `width`, `height`, `fps`, and bitrate values, then restart the container.
+To switch to 1080p60, edit `config/ffplayout.yml` and change `width`, `height`, `fps`, and bitrate values, then restart the service:
+
+```bash
+sudo systemctl restart ffplayout
+```
 
 ---
 
@@ -130,17 +147,15 @@ To switch to 1080p60, edit `config/ffplayout.yml` and change `width`, `height`, 
 # Check status
 bash scripts/status.sh
 
-# View live logs
-docker logs -f ffplayout
+# ffplayout (native systemd service)
+sudo systemctl status ffplayout
+sudo systemctl restart ffplayout
+journalctl -u ffplayout -f           # live logs
+
+# Restreamer (Docker)
 docker logs -f restreamer
-
-# Restart everything
 cd /opt/247live/docker && docker compose restart
-
-# Stop
 cd /opt/247live/docker && docker compose down
-
-# Update images
 cd /opt/247live/docker && docker compose pull && docker compose up -d
 ```
 
@@ -152,11 +167,26 @@ Stream keys are stored **inside Restreamer** (encrypted in `/opt/247live/restrea
 
 ---
 
+## Watchdog
+
+A systemd timer fires every 2 minutes and checks:
+- ffplayout service is active (restarts it if not)
+- Restreamer RTMP port 1935 is listening (restarts container if not)
+- At least one clip exists in `/srv/clips`
+
+View watchdog logs:
+```bash
+journalctl -u ffplayout-watchdog -f
+```
+
+---
+
 ## Roadmap
 
 - [x] Seamless 24/7 clip playout (ffplayout)
 - [x] Multi-platform output (Restreamer)
 - [x] Web UI for both services
+- [x] Auto-restart watchdog
 - [ ] Lower-thirds overlay (clip name + submitter)
 - [ ] Automated clip submission (Discord bot / web form → TrueNAS)
 - [ ] Clip normalization pipeline on upload

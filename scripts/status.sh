@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# status.sh (rta branch) - check health of the veka-247 Docker stack
+# status.sh (rta branch) - check health of the veka-247 stack
 set -euo pipefail
 
 echo "=== veka-247 rta status ==="
+echo ""
+echo "--- ffplayout service ---"
+systemctl is-active ffplayout 2>/dev/null && echo "ffplayout: RUNNING" || echo "ffplayout: NOT RUNNING"
 echo ""
 echo "--- Docker containers ---"
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Docker not running or not accessible"

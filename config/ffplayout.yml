@@ -5,9 +5,9 @@
 
 global:
   log_level: "warning"
-  log_path: "/var/log/ffplayout/ffplayout.log"
+  log_path: "/opt/247live/logs/ffplayout/ffplayout.log"
   log_to_file: true
-  stat_file: "/var/run/ffplayout/stats.json"
+  stat_file: "/opt/247live/logs/ffplayout/stats.json"
 
 processing:
   # Video output spec -- matches 720p30 quality profile from dev/config/stream.conf
@@ -31,16 +31,16 @@ ingest:
   enable: false
 
 playlist:
-  # folder mode: ffplayout reads directly from /tv-media (mapped to /srv/clips)
+  # folder mode: ffplayout reads directly from /srv/clips (TrueNAS NFS)
   # No generate_playlist.sh needed -- ffplayout handles this internally
   mode: "folder"
-  path: "/playlists"
+  path: "/opt/247live/playlists"
   day_start: "00:00:00"
   length: "24:00:00"
 
 storage:
-  # /tv-media is mapped to /srv/clips (TrueNAS NFS at 192.168.1.98:/mnt/tank/247Live)
-  path: "/tv-media"
+  # TrueNAS NFS mount at 192.168.1.98:/mnt/tank/247Live
+  path: "/srv/clips"
   filler: ""
   extensions:
     - "mp4"
@@ -67,7 +67,7 @@ task:
 
 out:
   # ffplayout pushes a single encoded RTMP stream to the local Restreamer container
-  # Restreamer then fans out to Twitch / YouTube / Kick via its web UI
+  # Restreamer runs in Docker and fans out to Twitch / YouTube / Kick via its web UI
   # This avoids re-encoding per platform and keeps CPU usage low
   mode: "stream"
   output: >-
@@ -85,4 +85,4 @@ out:
     -b:a 128k
     -ar 44100
     -f flv
-    rtmp://restreamer:1935/live/247live
+    rtmp://127.0.0.1:1935/live/247live
