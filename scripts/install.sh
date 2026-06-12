@@ -77,6 +77,7 @@ if [ ! -f /etc/ffplayout/ffplayout.yml ] || [ ! -f /etc/ffplayout/ffplayout.db ]
 fi
 
 # Ensure our custom config is in place
+mkdir -p /etc/ffplayout
 cp "$REPO_DIR/config/ffplayout.yml" /etc/ffplayout/ffplayout.yml
 chown ffpu:ffpu /etc/ffplayout/ffplayout.yml
 ok "Config installed"
