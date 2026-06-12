@@ -39,7 +39,7 @@ playlist:
   length: "24:00:00"
 
 storage:
-  # TrueNAS NFS mount at 192.168.1.98:/mnt/tank/247Live
+  # TrueNAS NFS mount at 192.168.1.98:/srv/clips
   path: "/srv/clips"
   filler: ""
   extensions:

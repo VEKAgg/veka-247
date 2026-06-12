@@ -52,7 +52,7 @@ if mountpoint -q /srv/clips; then
   ok "/srv/clips is mounted"
 else
   warn "/srv/clips is not mounted. Add to /etc/fstab:"
-  warn "  192.168.1.98:/mnt/tank/247Live /srv/clips nfs nofail,_netdev 0 0"
+  warn "  192.168.1.98:/srv/clips /srv/clips nfs nofail,_netdev 0 0"
 fi
 
 step "Configuring ffplayout"

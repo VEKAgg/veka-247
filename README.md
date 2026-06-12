@@ -10,7 +10,7 @@
 
 ```
 TrueNAS (192.168.1.98)
-  /mnt/tank/247Live/
+  /srv/clips/
         |
         | NFS4
         v
@@ -36,7 +36,7 @@ TrueNAS (192.168.1.98)
 
 | Component | IP | Path |
 |---|---|---|
-| TrueNAS | 192.168.1.98 | /mnt/tank/247Live |
+| TrueNAS | 192.168.1.98 | /srv/clips |
 | 247Live VM | 192.168.1.6 | /srv/clips (NFS mount) |
 | ffplayout UI | 192.168.1.6:8787 | Native systemd service |
 | Restreamer UI | 192.168.1.6:8080 | Docker container |
