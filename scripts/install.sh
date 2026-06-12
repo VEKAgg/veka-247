@@ -2,9 +2,9 @@
 # install.sh — veka-247 one-command setup
 # Usage: sudo bash scripts/install.sh
 #
-# Before running, create a .env file in the repo root:
-#   cp .env.example .env && nano .env
-# Fill in your TWITCH_KEY. That's the only required step.
+# After running this, open http://<VM_IP>:8787 and configure the channel:
+#   Settings → Playout → Output → mode: stream
+#   Output Parameter: -c:v libx264 ... rtmp://live.twitch.tv/app/YOUR_KEY
 
 set -euo pipefail
 
@@ -20,18 +20,9 @@ step() { printf "\n${YELLOW}==> ${NC}%s\n" "$1"; }
 
 [ "$(id -u)" -eq 0 ] || die "Run as root: sudo bash scripts/install.sh"
 
-# ── Load .env ────────────────────────────────────────────────────────────────
-step "Loading .env"
-ENV_FILE="$REPO_DIR/.env"
-[ -f "$ENV_FILE" ] || die ".env not found. Run: cp .env.example .env && nano .env"
-set -a; source "$ENV_FILE"; set +a
-
-[ -n "${TWITCH_KEY:-}" ] || die "TWITCH_KEY is not set in .env"
-ok "Stream key loaded"
-
 # ── Docker ───────────────────────────────────────────────────────────────────
 step "Checking Docker"
-command -v docker &>/dev/null || die "Docker not found. Install Docker first: https://docs.docker.com/engine/install/ubuntu/"
+command -v docker &>/dev/null || die "Docker not found. Install it first: https://docs.docker.com/engine/install/ubuntu/"
 docker compose version &>/dev/null || die "Docker Compose plugin not found."
 systemctl enable --now docker
 ok "Docker is running"
@@ -64,19 +55,19 @@ chown -R "${REAL_USER}:${REAL_USER}" "$INSTALL_DIR"
 chown -R ffpu:nogroup "$INSTALL_DIR/logs"
 chown "${REAL_USER}:${REAL_USER}" /srv/clips
 chmod 755 /srv/clips
-ok "Directories ready (owned by ${REAL_USER}, logs owned by ffpu)"
+ok "Directories ready (owned by ${REAL_USER})"
 
 # ── NFS ───────────────────────────────────────────────────────────────────────
 step "Checking NFS mount /srv/clips"
 if mountpoint -q /srv/clips; then
   ok "/srv/clips is mounted"
 else
-  warn "/srv/clips is not mounted. Add this to /etc/fstab and run: mount /srv/clips"
-  warn "  ${TRUENAS_IP:-192.168.1.98}:/srv/clips /srv/clips nfs nofail,_netdev 0 0"
+  warn "/srv/clips is not mounted. Add to /etc/fstab:"
+  warn "  192.168.1.98:/srv/clips /srv/clips nfs nofail,_netdev 0 0"
 fi
 
-# ── ffplayout config ──────────────────────────────────────────────────────────
-step "Configuring ffplayout"
+# ── ffplayout init ────────────────────────────────────────────────────────────
+step "Initialising ffplayout"
 if [ ! -f /etc/ffplayout/ffplayout.db ]; then
   sudo -u ffpu ffplayout -i \
     -u admin \
@@ -92,30 +83,24 @@ if [ ! -f /etc/ffplayout/ffplayout.db ]; then
     --smtp-port 465 \
     --smtp-starttls false \
     || warn "ffplayout init may have partially failed (existing db?)"
-  ok "ffplayout initialized"
+  ok "ffplayout initialised"
+else
+  warn "ffplayout DB already exists — skipping init (existing config preserved)"
 fi
 
-# Inject stream key into config and install it
-mkdir -p /etc/ffplayout
-sed "s|YOUR_TWITCH_STREAM_KEY|${TWITCH_KEY}|g" \
-  "$REPO_DIR/config/ffplayout.yml" > /etc/ffplayout/ffplayout.yml
-chown ffpu:nogroup /etc/ffplayout/ffplayout.yml
-ok "Config installed (stream key injected)"
-
 # ── Start ffplayout ───────────────────────────────────────────────────────────
-step "Starting ffplayout service"
+step "Starting ffplayout"
 systemctl enable --now ffplayout
 systemctl restart ffplayout
-ok "ffplayout service started"
+ok "ffplayout running on http://$(hostname -I | awk '{print $1}'):8787"
 
-# ── Restreamer (optional, for multi-platform) ─────────────────────────────────
-step "Starting Restreamer (optional multi-platform relay)"
+# ── Restreamer ────────────────────────────────────────────────────────────────
+step "Starting Restreamer"
 cd "$REPO_DIR/docker"
-# Only pull/start if not already running — avoids resetting the Restreamer config
 if ! docker ps --format '{{.Names}}' | grep -q '^restreamer$'; then
   docker compose pull
   docker compose up -d
-  ok "Restreamer started"
+  ok "Restreamer started on http://$(hostname -I | awk '{print $1}'):8080"
 else
   warn "Restreamer already running — skipping restart to preserve config"
 fi
@@ -128,20 +113,26 @@ cp "$REPO_DIR/systemd/ffplayout-watchdog.service" /etc/systemd/system/
 cp "$REPO_DIR/systemd/ffplayout-watchdog.timer"   /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now ffplayout-watchdog.timer
-ok "Watchdog enabled (checks every 2 min, auto-restarts if needed)"
+ok "Watchdog enabled (checks every 2 min)"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 VM_IP=$(hostname -I | awk '{print $1}')
 echo ""
 echo "============================================================"
-echo "  veka-247 is live"
+echo "  veka-247 installed"
 echo "============================================================"
-echo "  Streaming to  -> Twitch (key from .env)"
 echo "  ffplayout UI  -> http://${VM_IP}:8787  (admin / admin)"
-echo "  Restreamer UI -> http://${VM_IP}:8080  (optional)"
+echo "  Restreamer UI -> http://${VM_IP}:8080  (optional, multi-platform)"
 echo ""
-echo "  Clips folder  -> /srv/clips"
-echo "  Add clips     -> scp clip.mp4 ${REAL_USER}@${VM_IP}:/srv/clips/"
-echo "  Status        -> bash scripts/status.sh"
-echo "  Logs          -> journalctl -u ffplayout -f"
+echo "  Next: configure your stream output in ffplayout UI:"
+echo "  Settings → Playout → Output"
+echo "    Mode: stream"
+echo "    Output Parameter: -c:v libx264 -preset superfast -profile:v high"
+echo "      -b:v 2500k -maxrate 2500k -bufsize 5000k -g 60 -r 30"
+echo "      -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -f flv"
+echo "      rtmp://live.twitch.tv/app/YOUR_TWITCH_KEY"
+echo ""
+echo "  Then: Player → Start"
+echo "  Clips:  scp clip.mp4 ${REAL_USER}@${VM_IP}:/srv/clips/"
+echo "  Status: bash scripts/status.sh"
 echo "============================================================"

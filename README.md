@@ -1,31 +1,32 @@
 # veka-247 — 24/7 Live Stream
 
-24/7 Twitch stream that loops your clips automatically. Drop videos in a folder, they play forever in shuffle.
+24/7 Twitch stream that loops your clips automatically. Drop videos into a folder, they play forever in shuffle.
 
 ---
 
 ## How it works
 
 ```
-/srv/clips/  (your videos)
+/srv/clips/  (your videos, NFS from TrueNAS)
      │
      ▼
- ffplayout        ← reads clips, encodes, loops 24/7
+ ffplayout  (reads clips, encodes, loops 24/7 — configured via web UI)
      │
-     ▼
- Twitch RTMP      ← rtmp://live.twitch.tv/app/YOUR_KEY
+     ├──▶ Twitch   rtmp://live.twitch.tv/app/YOUR_KEY
+     │
+     └──▶ (optional) Restreamer → YouTube / Kick
 ```
 
-- **ffplayout** is the engine. It reads every video from `/srv/clips`, shuffles them, and streams continuously. No playlist to manage — just drop files in and they play.
-- Your **Twitch stream key** lives in a `.env` file on the server only. It never touches the repo.
-- A **watchdog** timer checks every 2 minutes that everything is still running and restarts it if not.
-- **Restreamer** (optional) is included if you ever want to stream to YouTube or Kick simultaneously. Not required for Twitch-only.
+- **ffplayout** reads every video from `/srv/clips`, shuffles them, and streams continuously. No playlist to manage — drop files in and they play.
+- All channel settings (output URL, stream key, encoding, mode) are configured in the **ffplayout web UI** — no config files to edit.
+- A **watchdog** timer checks every 2 minutes that everything is running and restarts if not.
+- **Restreamer** is optional — only needed if you want to stream to YouTube or Kick at the same time as Twitch.
 
 ---
 
 ## Setup (fresh server)
 
-### 1. Clone the repo
+### 1. Clone
 
 ```bash
 sudo mkdir -p /opt/247live
@@ -34,37 +35,51 @@ git clone -b rta https://github.com/VEKAgg/veka-247 /opt/247live
 cd /opt/247live
 ```
 
-### 2. Create your .env with your Twitch key
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Set `TWITCH_KEY` to your stream key. Get it from:
-**Twitch → Creator Dashboard → Settings → Stream → Stream Key**
-
-```
-TWITCH_KEY=live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### 3. Run install
+### 2. Install
 
 ```bash
 sudo bash scripts/install.sh
 ```
 
-That's it. The stream starts automatically once you have clips.
+### 3. Configure ffplayout output
 
-### 4. Add clips
+Open `http://192.168.1.6:8787` → log in (`admin` / `admin`) → **Settings → Playout**
+
+Make these changes:
+
+| Section | Field | Value |
+|---|---|---|
+| Storage | Mode | Folder |
+| Storage | Shuffle | ✓ checked |
+| Text | Add Text | ✗ unchecked |
+| Output | Mode | stream |
+| Output | Output Parameter | *(see below)* |
+
+Paste this into **Output Parameter** (replace `YOUR_TWITCH_KEY`):
+```
+-c:v libx264 -preset superfast -profile:v high -b:v 2500k -maxrate 2500k -bufsize 5000k -g 60 -keyint_min 60 -r 30 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -f flv rtmp://live.twitch.tv/app/YOUR_TWITCH_KEY
+```
+
+Get your Twitch key from: **Twitch → Creator Dashboard → Settings → Stream → Stream Key**
+
+Hit **Save**.
+
+### 4. Start streaming
+
+Go to **Player** tab → press **Start**.
+
+Check logs to confirm it's pushing:
+```bash
+journalctl -u ffplayout -f
+```
+
+### 5. Add clips
 
 ```bash
-# from your local machine:
 scp myclip.mp4 vortek@192.168.1.6:/srv/clips/
-
-# or normalize first if clips have mixed resolutions/framerates:
-bash scripts/normalize_clips.sh
 ```
+
+ffplayout picks up new clips automatically — no restart needed.
 
 ---
 
@@ -72,10 +87,23 @@ bash scripts/normalize_clips.sh
 
 | Script | What it does | When to run |
 |---|---|---|
-| `scripts/install.sh` | Installs everything, reads `.env`, injects your stream key | Once on a fresh server, or after a clean wipe |
-| `scripts/normalize_clips.sh` | Converts raw clips to consistent 720p30 format | Before adding clips that have different resolutions or framerates |
-| `scripts/status.sh` | Shows if ffplayout and Docker are running, how many clips you have | Any time you want to check health |
-| `scripts/watchdog.sh` | Checks ffplayout is alive, restarts it if not | Runs automatically every 2 min via systemd — you don't call this manually |
+| `scripts/install.sh` | Installs ffplayout + Restreamer, creates dirs, starts services | Once on a fresh server |
+| `scripts/normalize_clips.sh` | Converts clips to consistent 720p30 format | Before adding clips with mixed resolutions/framerates |
+| `scripts/status.sh` | Shows if services are running and how many clips exist | Any time you want to check health |
+| `scripts/watchdog.sh` | Checks ffplayout is alive, restarts if not | Runs automatically every 2 min — do not call manually |
+
+---
+
+## Normalizing clips
+
+If your clips have different resolutions or framerates, pre-process them first to avoid frame freezes at cut points:
+
+```bash
+mkdir -p /srv/clips/raw
+# move raw clips into /srv/clips/raw, then:
+bash scripts/normalize_clips.sh
+# normalized files appear in /srv/clips as *_norm.mp4
+```
 
 ---
 
@@ -88,34 +116,31 @@ bash scripts/status.sh
 # Watch live logs (see which clip is playing)
 journalctl -u ffplayout -f
 
-# Add a clip
-scp clip.mp4 vortek@192.168.1.6:/srv/clips/
-# ffplayout picks it up automatically — no restart needed
-
-# Restart ffplayout manually
+# Restart ffplayout
 sudo systemctl restart ffplayout
 
-# Restart Restreamer (if using multi-platform)
+# Restart Restreamer
 cd /opt/247live/docker && docker compose restart
 ```
 
 ---
 
-## Is the playlist rolling?
+## Multi-platform streaming (optional)
 
-Yes — automatically. ffplayout runs in **folder mode**: it reads every file in `/srv/clips`, shuffles them, and loops continuously. There is no playlist file to generate or manage. When you add a new clip, ffplayout picks it up on its next cycle without any restart.
+Restreamer is already installed and running at `http://192.168.1.6:8080`. To stream to YouTube or Kick simultaneously:
 
-To confirm it's working:
-```bash
-journalctl -u ffplayout -f
-```
-You'll see log lines showing which clip is currently playing and what's up next.
+1. Open Restreamer UI → configure it to ingest from ffplayout
+2. In ffplayout Output Parameter, push to Restreamer instead of Twitch directly:
+   ```
+   rtmp://127.0.0.1:1935/live/YOUR_RESTREAMER_KEY
+   ```
+3. Restreamer fans out to all platforms
 
 ---
 
 ## Stream quality
 
-Default: **720p30 @ 2500k** — safe for Twitch, works on a 2-core VM.
+Default: **720p30 @ 2500k** — works on a 2-core VM, safe for Twitch.
 
 | Setting | Value |
 |---|---|
@@ -125,45 +150,17 @@ Default: **720p30 @ 2500k** — safe for Twitch, works on a 2-core VM.
 | Audio | AAC 128k 44100Hz |
 | Encoder | libx264 superfast |
 
-To change quality, edit `config/ffplayout.yml`, then re-run `sudo bash scripts/install.sh`.
-
----
-
-## Architecture
-
-```
-TrueNAS (192.168.1.98)
-  /srv/clips/
-        │  NFS
-        ▼
-247Live VM (192.168.1.6)
-  /srv/clips/
-        │
-        ▼
-  ffplayout (systemd)   →   rtmp://live.twitch.tv/app/KEY   →   Twitch
-  :8787 web UI
-        │
-        ▼ (optional, for YouTube/Kick)
-  Restreamer (Docker)
-  :8080 web UI
-```
-
----
-
-## Credential handling
-
-Stream keys are in `/opt/247live/.env` on the server only. That file is gitignored and never committed. The repo contains only a `.env.example` with placeholder values.
+To change, update the Output Parameter in the ffplayout UI and restart the player.
 
 ---
 
 ## Watchdog
 
-A systemd timer fires every 2 minutes:
-- Checks ffplayout service is active (restarts if not)
-- Checks Restreamer RTMP port 1935 is listening
-- Warns if `/srv/clips` is empty
+Fires every 2 min via systemd timer. Checks:
+- ffplayout is active (restarts if not)
+- Restreamer RTMP port 1935 is listening
+- `/srv/clips` has at least one clip
 
-View watchdog logs:
 ```bash
 journalctl -u ffplayout-watchdog -f
 ```
@@ -174,29 +171,26 @@ journalctl -u ffplayout-watchdog -f
 
 ```
 veka-247/
-├── .env.example             ← copy to .env, fill in TWITCH_KEY
-├── config/
-│   └── ffplayout.yml        ← encoding settings (stream key injected by install.sh)
+├── .env.example             ← infrastructure reference (no secrets)
 ├── docker/
 │   └── docker-compose.yml   ← Restreamer (optional multi-platform)
+├── overlays/                ← overlay images (future use)
 ├── scripts/
 │   ├── install.sh           ← one-command setup
-│   ├── normalize_clips.sh   ← pre-process clips with mixed formats
+│   ├── normalize_clips.sh   ← pre-process mixed-format clips
 │   ├── status.sh            ← health check
 │   └── watchdog.sh          ← auto-restart (runs via systemd timer)
-├── systemd/
-│   ├── ffplayout-watchdog.service
-│   └── ffplayout-watchdog.timer
-└── overlays/                ← overlay images (future use)
+└── systemd/
+    ├── ffplayout-watchdog.service
+    └── ffplayout-watchdog.timer
 ```
 
 ---
 
 ## Roadmap
 
-- [x] Seamless 24/7 clip playout (ffplayout)
+- [x] Seamless 24/7 clip playout (ffplayout folder mode)
 - [x] Direct Twitch RTMP output
-- [x] Stream key in .env, never in repo
 - [x] Auto-restart watchdog
 - [x] Optional multi-platform output (Restreamer)
 - [ ] Lower-thirds overlay (clip name / submitter)
