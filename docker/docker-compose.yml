@@ -1,9 +1,86 @@
+version: "3.8"
+
 services:
 
+  # ── ffplayout TTTR ────────────────────────────────────────────────────────
+  ffplayout-tttr:
+    image: ffplayout/ffplayout:latest
+    container_name: ffplayout-tttr
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ../config/ffplayout-tttr.yml:/etc/ffplayout/ffplayout.yml
+      - /srv/clips/tttr:/tv-media
+      - /opt/247live/playlists/tttr:/playlists
+      - /opt/247live/logs/ffplayout-tttr:/var/log/ffplayout
+    environment:
+      - TZ=Asia/Dubai
+    depends_on:
+      - restreamer
+
+  # ── ffplayout IGFV ────────────────────────────────────────────────────────
+  ffplayout-igfv:
+    image: ffplayout/ffplayout:latest
+    container_name: ffplayout-igfv
+    restart: unless-stopped
+    ports:
+      - "8788:8787"
+    volumes:
+      - ../config/ffplayout-igfv.yml:/etc/ffplayout/ffplayout.yml
+      - /srv/clips/igfv:/tv-media
+      - /opt/247live/playlists/igfv:/playlists
+      - /opt/247live/logs/ffplayout-igfv:/var/log/ffplayout
+    environment:
+      - TZ=Asia/Dubai
+    depends_on:
+      - restreamer
+
+  # ── ffplayout FH6 ─────────────────────────────────────────────────────────
+  ffplayout-fh6:
+    image: ffplayout/ffplayout:latest
+    container_name: ffplayout-fh6
+    restart: unless-stopped
+    ports:
+      - "8789:8787"
+    volumes:
+      - ../config/ffplayout-fh6.yml:/etc/ffplayout/ffplayout.yml
+      - /srv/clips/fh6:/tv-media
+      - /opt/247live/playlists/fh6:/playlists
+      - /opt/247live/logs/ffplayout-fh6:/var/log/ffplayout
+    environment:
+      - TZ=Asia/Dubai
+    depends_on:
+      - restreamer
+
+  # ── NGINX RTMP (Ingest for IRL / OBS) ─────────────────────────────────────
+  nginx-rtmp:
+    image: tiangolo/nginx-rtmp
+    container_name: nginx-rtmp
+    restart: unless-stopped
+    ports:
+      - "1935:1935" # Phone streams to rtmp://<ip>:1935/live/irl
+    volumes:
+      - ../config/nginx.conf:/etc/nginx/nginx.conf
+
+  # ── OBS Studio (Cloud Compositor) ─────────────────────────────────────────
+  obs-studio:
+    image: lscr.io/linuxserver/obs-studio:latest
+    container_name: obs-studio
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined # Required for OBS UI rendering
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Dubai
+    ports:
+      - "3000:3000" # Web UI (noVNC)
+    volumes:
+      - /opt/247live/obs/config:/config
+      - /srv/clips/irl-fallback:/media/fallback
+
   # ── Restreamer ────────────────────────────────────────────────────────────
-  # Receives RTMP from ffplayout (running natively), fans out to Twitch / YouTube / Kick
-  # Web UI: http://<vm-ip>:8080
-  # Stream keys are configured in the Restreamer web UI (not /etc/credstore)
   restreamer:
     image: datarhei/restreamer:2.12.0
     container_name: restreamer
@@ -11,8 +88,7 @@ services:
     ports:
       - "8080:8080"   # HTTP web UI
       - "8181:8181"   # HTTPS web UI
-      - "1935:1935"   # RTMP ingest (ffplayout pushes here)
-      - "1936:1936"   # RTMPS
+      - "1936:1936"   # Expose RTMP ingest on 1936 instead to avoid conflict with nginx-rtmp
     volumes:
       - /opt/247live/restreamer/config:/core/config
       - /opt/247live/restreamer/data:/core/data

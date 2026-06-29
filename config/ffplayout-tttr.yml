@@ -1,0 +1,74 @@
+# ffplayout.yml for TTTR
+global:
+  log_level: "warning"
+  log_path: "/var/log/ffplayout/ffplayout.log"
+  log_to_file: true
+  stat_file: "/var/run/ffplayout/stats.json"
+
+processing:
+  width: 1280
+  height: 720
+  fps: 30
+  add_logo: false
+  logo: ""
+  logo_scale: ""
+  logo_opacity: 1
+  logo_filter: "overlay=W-w-12:12"
+  add_loudnorm: false
+  loud_i: -18
+  loud_tp: -1.5
+  loud_lra: 11
+  custom_filter: "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,fps=30,format=yuv420p"
+
+ingest:
+  enable: false
+
+playlist:
+  mode: "folder"
+  path: "/playlists"
+  day_start: "00:00:00"
+  length: "24:00:00"
+
+storage:
+  path: "/tv-media"
+  filler: ""
+  extensions:
+    - "mp4"
+    - "mkv"
+    - "mov"
+    - "avi"
+    - "flv"
+    - "ts"
+  shuffle: true
+
+text:
+  add_text: false
+  over_pre: false
+  bind_address: "127.0.0.1:5555"
+  fontfile: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+  text_from_filename: false
+  style: "FontSize=24,PrimaryColour=&Hffffff,BackColour=&H80000000,BorderStyle=4"
+  regex: "^.+[/\\\\](.+?)(_\\d+)*\\.\\w+$"
+
+task:
+  enable: false
+  path: "/usr/bin/task"
+
+out:
+  mode: "stream"
+  output: >-
+    -c:v libx264
+    -preset superfast
+    -profile:v high
+    -b:v 2500k
+    -maxrate 2500k
+    -bufsize 5000k
+    -g 60
+    -keyint_min 60
+    -r 30
+    -pix_fmt yuv420p
+    -c:a aac
+    -b:a 128k
+    -ar 44100
+    -f flv
+    rtmp://restreamer:1935/live/tttr
