@@ -1,185 +1,152 @@
-# veka-247 — 24/7 Live Stream
+# veka-247 — Multi-Channel 24/7 Streaming Server
 
-24/7 Twitch stream that loops your clips automatically. Drop videos into a folder, they play forever in shuffle.
-
----
-
-## How it works
-
-```
-/srv/clips/  (your videos, NFS from TrueNAS)
-     │
-     ▼
- ffplayout  (reads clips, encodes, loops 24/7 — configured via web UI)
-     │
-     ├──▶ Twitch   rtmp://live.twitch.tv/app/YOUR_KEY
-     │
-     └──▶ (optional) Restreamer → YouTube / Kick
-```
-
-- **ffplayout** reads every video from `/srv/clips`, shuffles them, and streams continuously. No playlist to manage — drop files in and they play.
-- All channel settings (output URL, stream key, encoding, mode) are configured in the **ffplayout web UI** — no config files to edit.
-- A **watchdog** timer checks every 2 minutes that everything is running and restarts if not.
-- **Restreamer** is optional — only needed if you want to stream to YouTube or Kick at the same time as Twitch.
+Docker-based multi-channel livestream stack with a custom dashboard, alert system, and IRL relay.
 
 ---
 
-## Setup (fresh server)
+## Architecture
 
-### 1. Clone
+```
+┌──────────────────────────────────────────────────────────┐
+│                 Svelte Web Dashboard                      │
+│  Channels │ Alerts │ IRL │ Clips │ Preview │ Platforms    │
+└──────────────────────────┬───────────────────────────────┘
+                           │ REST API + WebSocket
+┌──────────────────────────▼───────────────────────────────┐
+│              Python FastAPI Backend                        │
+│  Channel Manager │ Alert Engine │ Overlay Manager          │
+│  Clip Manager │ IRL Relay │ PostgreSQL                     │
+└───────┬──────────────────┬──────────────────┬────────────┘
+        │                  │                  │
+   ┌────▼────┐        ┌─────▼─────┐     ┌────▼────┐
+   │ffplayout│        │ffplayout  │     │ffplayout│
+   │  TTTR   │        │  IGFV/FH6 │     │  VA     │
+   └────┬────┘        └─────┬─────┘     └────┬────┘
+        └─────────┬─────────┴─────────────────┘
+                  │ RTMP
+        ┌─────────▼─────────┐
+        │    Restreamer      │
+        └─────────┬─────────┘
+                  │
+     ┌────────────┼────────────┐
+     ▼            ▼            ▼
+  Twitch       YouTube       Kick
+  (Mumbai)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phone (IRL) ──RTMP──→ MediaMTX ──→ FFmpeg ──→ Platforms
+```
+
+---
+
+## Channels
+
+| Channel | Content | Clips Folder | ffplayout Port |
+|---------|---------|-------------|----------------|
+| TTTR | GTA5 Roleplay | `/srv/clips/tttr` | 8787 |
+| IGFV | Elite Dangerous | `/srv/clips/igfv` | 8788 |
+| FH6 | Forza Horizon 6 | `/srv/clips/fh6` | 8789 |
+| VA | Rocket League | `/srv/clips/va` | 8790 |
+
+---
+
+## Quick Start
 
 ```bash
-sudo mkdir -p /opt/247live
-sudo chown $USER:$USER /opt/247live
-git clone -b rta https://github.com/VEKAgg/veka-247 /opt/247live
+# Clone and install
+git clone <repo-url> /opt/247live
 cd /opt/247live
-```
-
-### 2. Install
-
-```bash
 sudo bash scripts/install.sh
 ```
 
-### 3. Configure ffplayout output
+### Access the services
 
-Open `http://192.168.1.6:8787` → log in (`admin` / `admin`) → **Settings → Playout**
-
-Make these changes:
-
-| Section | Field | Value |
-|---|---|---|
-| Storage | Mode | Folder |
-| Storage | Shuffle | ✓ checked |
-| Text | Add Text | ✗ unchecked |
-| Output | Mode | stream |
-| Output | Output Parameter | *(see below)* |
-
-Paste this into **Output Parameter** (replace `YOUR_TWITCH_KEY`):
-```
--c:v libx264 -preset superfast -profile:v high -b:v 2500k -maxrate 2500k -bufsize 5000k -g 60 -keyint_min 60 -r 30 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -f flv rtmp://live.twitch.tv/app/YOUR_TWITCH_KEY
-```
-
-Get your Twitch key from: **Twitch → Creator Dashboard → Settings → Stream → Stream Key**
-
-Hit **Save**.
-
-### 4. Start streaming
-
-Go to **Player** tab → press **Start**.
-
-Check logs to confirm it's pushing:
-```bash
-journalctl -u ffplayout -f
-```
-
-### 5. Add clips
-
-```bash
-scp myclip.mp4 vortek@192.168.1.6:/srv/clips/
-```
-
-ffplayout picks up new clips automatically — no restart needed.
+| Service | URL |
+|---------|-----|
+| Dashboard | `http://<VM_IP>:3000` |
+| Backend API | `http://<VM_IP>:8000` |
+| Restreamer | `http://<VM_IP>:8080` |
+| MediaMTX HLS | `http://<VM_IP>:8888` |
+| IRL Ingest | `rtmp://<VM_IP>:1935/live/irl` |
 
 ---
 
-## What each script does
+## Stream Keys
 
-| Script | What it does | When to run |
-|---|---|---|
-| `scripts/install.sh` | Installs ffplayout + Restreamer, creates dirs, starts services | Once on a fresh server |
-| `scripts/normalize_clips.sh` | Converts clips to consistent 720p30 format | Before adding clips with mixed resolutions/framerates |
-| `scripts/status.sh` | Shows if services are running and how many clips exist | Any time you want to check health |
-| `scripts/watchdog.sh` | Checks ffplayout is alive, restarts if not | Runs automatically every 2 min — do not call manually |
+Stream keys are configured in the **Restreamer web UI** (`:8080`) for 24/7 channels, or via the **Dashboard** (`:3000`) for the new system.
+
+### Twitch Mumbai
+
+| Server | RTMP URL |
+|--------|----------|
+| Mumbai | `rtmp://aps30.contribute.live-video.net/app` |
+| Auto-route | `rtmp://ingest.global-contribute.live-video.net/app` |
+
+### YouTube
+
+| Server | RTMP URL |
+|--------|----------|
+| Primary | `rtmp://a.rtmp.youtube.com/live2` |
+| Backup | `rtmp://b.rtmp.youtube.com/live2?backup=1` |
+
+### Kick
+
+Per-account URL from your Kick dashboard. Format:
+`rtmps://{account-id}.global-contribute.live-video.net:443/app`
 
 ---
 
-## Normalizing clips
+## IRL Streaming
 
-If your clips have different resolutions or framerates, pre-process them first to avoid frame freezes at cut points:
+Stream from your phone using Moblin, PRISM Live, or any RTMP app:
 
-```bash
-mkdir -p /srv/clips/raw
-# move raw clips into /srv/clips/raw, then:
-bash scripts/normalize_clips.sh
-# normalized files appear in /srv/clips as *_norm.mp4
+```
+RTMP URL: rtmp://your-server:1935/live/irl
 ```
 
----
-
-## Daily use
-
-```bash
-# Check everything is running
-bash scripts/status.sh
-
-# Watch live logs (see which clip is playing)
-journalctl -u ffplayout -f
-
-# Restart ffplayout
-sudo systemctl restart ffplayout
-
-# Restart Restreamer
-cd /opt/247live/docker && docker compose restart
-```
+No stream key required for IRL ingest.
 
 ---
 
-## Multi-platform streaming (optional)
+## Database
 
-Restreamer is already installed and running at `http://192.168.1.6:8080`. To stream to YouTube or Kick simultaneously:
-
-1. Open Restreamer UI → configure it to ingest from ffplayout
-2. In ffplayout Output Parameter, push to Restreamer instead of Twitch directly:
-   ```
-   rtmp://127.0.0.1:1935/live/YOUR_RESTREAMER_KEY
-   ```
-3. Restreamer fans out to all platforms
-
----
-
-## Stream quality
-
-Default: **720p30 @ 2500k** — works on a 2-core VM, safe for Twitch.
-
-| Setting | Value |
-|---|---|
-| Resolution | 1280×720 |
-| FPS | 30 |
-| Video bitrate | 2500k |
-| Audio | AAC 128k 44100Hz |
-| Encoder | libx264 superfast |
-
-To change, update the Output Parameter in the ffplayout UI and restart the player.
+PostgreSQL 16 with:
+- Channel management
+- Per-channel platform configuration
+- Clip tracking
+- Alert templates (Streamlabs + StreamElements webhooks)
+- Stream session history (partitioned by month)
+- LISTEN/NOTIFY for real-time WebSocket updates
 
 ---
 
-## Watchdog
-
-Fires every 2 min via systemd timer. Checks:
-- ffplayout is active (restarts if not)
-- Restreamer RTMP port 1935 is listening
-- `/srv/clips` has at least one clip
-
-```bash
-journalctl -u ffplayout-watchdog -f
-```
-
----
-
-## Project structure
+## Project Structure
 
 ```
 veka-247/
-├── .env.example             ← infrastructure reference (no secrets)
+├── config/                    # ffplayout + MediaMTX configs
+│   ├── ffplayout-tttr.yml
+│   ├── ffplayout-igfv.yml
+│   ├── ffplayout-fh6.yml
+│   ├── ffplayout-va.yml
+│   └── mediamtx.yml
+├── server/                    # Python FastAPI backend
+│   ├── main.py
+│   ├── models.py
+│   ├── routers/
+│   ├── services/
+│   └── sql/init.sql
+├── dashboard/                 # Svelte web dashboard
+│   ├── src/
+│   └── Dockerfile
 ├── docker/
-│   └── docker-compose.yml   ← Restreamer (optional multi-platform)
-├── overlays/                ← overlay images (future use)
+│   └── docker-compose.yml
 ├── scripts/
-│   ├── install.sh           ← one-command setup
-│   ├── normalize_clips.sh   ← pre-process mixed-format clips
-│   ├── status.sh            ← health check
-│   └── watchdog.sh          ← auto-restart (runs via systemd timer)
+│   ├── install.sh
+│   ├── normalize_clips.sh
+│   ├── status.sh
+│   └── watchdog.sh
 └── systemd/
     ├── ffplayout-watchdog.service
     └── ffplayout-watchdog.timer
@@ -187,13 +154,33 @@ veka-247/
 
 ---
 
-## Roadmap
+## Managing the Stack
 
-- [x] Seamless 24/7 clip playout (ffplayout folder mode)
-- [x] Direct Twitch RTMP output
-- [x] Auto-restart watchdog
-- [x] Optional multi-platform output (Restreamer)
-- [ ] Lower-thirds overlay (clip name / submitter)
-- [ ] Automated clip submission (Discord bot → TrueNAS)
-- [ ] Clip normalization on upload
-- [ ] Schedule-based playout (specific clips at specific times)
+```bash
+# Check status
+bash scripts/status.sh
+
+# View logs
+docker logs -f veka-backend
+docker logs -f mediamtx
+
+# Restart everything
+cd /opt/247live/docker && docker compose restart
+
+# Stop
+cd /opt/247live/docker && docker compose down
+
+# Update images
+cd /opt/247live/docker && docker compose pull && docker compose build && docker compose up -d
+```
+
+---
+
+## Normalizing Clips
+
+```bash
+mkdir -p /srv/clips/raw
+# move raw clips into /srv/clips/raw, then:
+bash scripts/normalize_clips.sh
+# normalized files appear as *_norm.mp4
+```

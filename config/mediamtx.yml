@@ -1,0 +1,48 @@
+# mediamtx.yml — MediaMTX config for veka-247
+# Used for: IRL ingest (phone RTMP) + HLS preview for dashboard
+
+# Global settings
+logLevel: info
+logDestinations: [stdout]
+
+# RTMP server (phone streams here for IRL)
+rtmpAddress: :1935
+rtmpsAddress: :1936
+
+# RTSP server (internal, used by FFmpeg overlay processes)
+rtspAddress: :8554
+
+# HLS server (dashboard preview)
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsSegmentDuration: 200ms
+hlsSegmentCount: 5
+hlsAlwaysRemux: true
+
+# WebRTC (optional future use)
+webrtcAddress: :8889
+
+# API server (backend control)
+apiAddress: :9997
+
+# Path configuration
+paths:
+  # IRL ingest path — phone streams to rtmp://server:1935/live/irl
+  live/irl:
+    # Always-available: stream persists even if publisher disconnects
+    # (shows last frame / test pattern)
+    # Source is the publisher (phone app)
+    source: publisher
+
+    # No runOnReady — backend manages the overlay FFmpeg process
+    # when it detects a stream on this path
+
+    # Allow any publisher (no auth for IRL ingest)
+    # In production, you might want to add authentication
+
+  # Channel preview paths — ffplayout containers push here for HLS
+  # These are auto-created when a publisher connects to /channel-{slug}
+  channel-~(?P<channel>.+):
+    source: publisher
+    # HLS output for dashboard preview
+    # Accessible at http://server:8888/{path}/stream.m3u8

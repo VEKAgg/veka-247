@@ -2,6 +2,88 @@ version: "3.8"
 
 services:
 
+  # ── Python Backend ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: veka-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - /srv/channels:/channels
+      - /srv/overlays:/overlays
+      - ../server/overlays:/app/overlays
+    environment:
+      - DATABASE_URL=postgresql+psycopg://veka:veka_secret@postgres:5432/veka
+      - MEDIAMTX_URL=http://mediamtx:9997
+      - MEDIA_PATH=/channels
+      - OVERLAY_PATH=/overlays
+      - TZ=Asia/Dubai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mediamtx:
+        condition: service_started
+    networks:
+      - veka
+
+  # ── Svelte Dashboard ──────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    container_name: veka-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - veka
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: veka-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - /opt/247live/postgres/data:/var/lib/postgresql/data
+      - ../server/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      - POSTGRES_DB=veka
+      - POSTGRES_USER=veka
+      - POSTGRES_PASSWORD=veka_secret
+      - TZ=Asia/Dubai
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veka"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veka
+
+  # ── MediaMTX (IRL ingest + HLS preview) ───────────────────────────────────
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    ports:
+      - "1935:1935"   # RTMP ingest (IRL phone streams here)
+      - "1936:1936"   # RTMPS
+      - "8888:8888"   # HLS output (dashboard preview)
+      - "8889:8889"   # WebRTC
+      - "9997:9997"   # API
+    volumes:
+      - ../config/mediamtx.yml:/mediamtx.yml
+    environment:
+      - TZ=Asia/Dubai
+    networks:
+      - veka
+
   # ── ffplayout TTTR ────────────────────────────────────────────────────────
   ffplayout-tttr:
     image: ffplayout/ffplayout:latest
@@ -18,6 +100,8 @@ services:
       - TZ=Asia/Dubai
     depends_on:
       - restreamer
+    networks:
+      - veka
 
   # ── ffplayout IGFV ────────────────────────────────────────────────────────
   ffplayout-igfv:
@@ -35,6 +119,8 @@ services:
       - TZ=Asia/Dubai
     depends_on:
       - restreamer
+    networks:
+      - veka
 
   # ── ffplayout FH6 ─────────────────────────────────────────────────────────
   ffplayout-fh6:
@@ -52,35 +138,29 @@ services:
       - TZ=Asia/Dubai
     depends_on:
       - restreamer
+    networks:
+      - veka
 
-  # ── NGINX RTMP (Ingest for IRL / OBS) ─────────────────────────────────────
-  nginx-rtmp:
-    image: tiangolo/nginx-rtmp
-    container_name: nginx-rtmp
+  # ── ffplayout VA (Rocket League) ──────────────────────────────────────────
+  ffplayout-va:
+    image: ffplayout/ffplayout:latest
+    container_name: ffplayout-va
     restart: unless-stopped
     ports:
-      - "1935:1935" # Phone streams to rtmp://<ip>:1935/live/irl
+      - "8790:8787"
     volumes:
-      - ../config/nginx.conf:/etc/nginx/nginx.conf
-
-  # ── OBS Studio (Cloud Compositor) ─────────────────────────────────────────
-  obs-studio:
-    image: lscr.io/linuxserver/obs-studio:latest
-    container_name: obs-studio
-    restart: unless-stopped
-    security_opt:
-      - seccomp:unconfined # Required for OBS UI rendering
+      - ../config/ffplayout-va.yml:/etc/ffplayout/ffplayout.yml
+      - /srv/clips/va:/tv-media
+      - /opt/247live/playlists/va:/playlists
+      - /opt/247live/logs/ffplayout-va:/var/log/ffplayout
     environment:
-      - PUID=1000
-      - PGID=1000
       - TZ=Asia/Dubai
-    ports:
-      - "3000:3000" # Web UI (noVNC)
-    volumes:
-      - /opt/247live/obs/config:/config
-      - /srv/clips/irl-fallback:/media/fallback
+    depends_on:
+      - restreamer
+    networks:
+      - veka
 
-  # ── Restreamer ────────────────────────────────────────────────────────────
+  # ── Restreamer (24/7 channel fan-out to platforms) ────────────────────────
   restreamer:
     image: datarhei/restreamer:2.12.0
     container_name: restreamer
@@ -88,9 +168,15 @@ services:
     ports:
       - "8080:8080"   # HTTP web UI
       - "8181:8181"   # HTTPS web UI
-      - "1936:1936"   # Expose RTMP ingest on 1936 instead to avoid conflict with nginx-rtmp
+      - "1937:1935"   # RTMP ingest (separate from MediaMTX's 1935)
     volumes:
       - /opt/247live/restreamer/config:/core/config
       - /opt/247live/restreamer/data:/core/data
     environment:
       - TZ=Asia/Dubai
+    networks:
+      - veka
+
+networks:
+  veka:
+    driver: bridge

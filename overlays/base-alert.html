@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: transparent; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }
+
+.alert {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 40px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid #FFD700;
+  border-radius: 16px;
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.25), 0 8px 32px rgba(0,0,0,0.6);
+}
+
+.alert.active {
+  animation: slideUp 0.5s ease-out 0.1s forwards, fadeOut 0.5s ease-in 9s forwards;
+}
+
+.alert-icon img {
+  width: 80px;
+  height: 80px;
+}
+
+.alert-content { text-align: left; }
+
+.alert-name {
+  font-size: 36px;
+  font-weight: bold;
+  color: #FFD700;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.alert-message {
+  font-size: 24px;
+  color: #ffffff;
+  margin-top: 4px;
+}
+
+@keyframes slideUp {
+  from { transform: translateX(-50%) translateY(100px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+@keyframes fadeOut {
+  to { opacity: 0; }
+}
+</style>
+</head>
+<body>
+<div id="alert" class="alert">
+  <div class="alert-icon">
+    <img id="alert-img" src="" onerror="this.style.display='none'">
+  </div>
+  <div class="alert-content">
+    <div class="alert-name" id="alert-name"></div>
+    <div class="alert-message" id="alert-message"></div>
+  </div>
+</div>
+
+<script>
+const channelSlug = window.location.pathname.split('/').pop() || 'default';
+
+const ws = new WebSocket(`ws://${window.location.hostname}:8000/ws/overlay/${channelSlug}`);
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  const alert = document.getElementById('alert');
+  const nameEl = document.getElementById('alert-name');
+  const msgEl = document.getElementById('alert-message');
+  const imgEl = document.getElementById('alert-img');
+
+  nameEl.textContent = data.name || '';
+  msgEl.textContent = data.message || '';
+  if (data.image) imgEl.src = data.image;
+
+  alert.classList.remove('active');
+  void alert.offsetWidth;
+  alert.classList.add('active');
+
+  setTimeout(() => {
+    alert.classList.remove('active');
+  }, (data.duration || 10) * 1000);
+};
+
+ws.onclose = () => {
+  setTimeout(() => {
+    window.location.reload();
+  }, 5000);
+};
+</script>
+</body>
+</html>

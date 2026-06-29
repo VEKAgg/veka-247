@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# install.sh (rta branch)
-# Sets up the veka-247 rta stack: Docker-based ffplayout + Restreamer
+# install.sh — veka-247 full stack deployment
 # Usage: sudo bash scripts/install.sh
 
 set -euo pipefail
@@ -24,12 +23,22 @@ ok "Docker is running"
 
 step "Creating directories"
 mkdir -p \
-  "$INSTALL_DIR/playlists/tttr" "$INSTALL_DIR/playlists/igfv" "$INSTALL_DIR/playlists/fh6" \
-  "$INSTALL_DIR/logs/ffplayout-tttr" "$INSTALL_DIR/logs/ffplayout-igfv" "$INSTALL_DIR/logs/ffplayout-fh6" \
+  "$INSTALL_DIR/playlists/tttr" \
+  "$INSTALL_DIR/playlists/igfv" \
+  "$INSTALL_DIR/playlists/fh6" \
+  "$INSTALL_DIR/playlists/va" \
+  "$INSTALL_DIR/logs/ffplayout-tttr" \
+  "$INSTALL_DIR/logs/ffplayout-igfv" \
+  "$INSTALL_DIR/logs/ffplayout-fh6" \
+  "$INSTALL_DIR/logs/ffplayout-va" \
   "$INSTALL_DIR/restreamer/config" \
   "$INSTALL_DIR/restreamer/data" \
-  "$INSTALL_DIR/obs/config"
-mkdir -p /srv/clips/tttr /srv/clips/igfv /srv/clips/fh6 /srv/clips/irl-fallback
+  "$INSTALL_DIR/postgres/data" \
+  /srv/clips/tttr \
+  /srv/clips/igfv \
+  /srv/clips/fh6 \
+  /srv/clips/va \
+  /srv/overlays
 ok "Directories ready"
 
 step "Checking NFS mount /srv/clips"
@@ -45,25 +54,37 @@ cd "$REPO_DIR/docker"
 docker compose pull
 ok "Images pulled"
 
+step "Building custom images"
+docker compose build
+ok "Custom images built"
+
 step "Starting stack"
 docker compose up -d
 ok "Stack started"
 
+step "Waiting for PostgreSQL"
+sleep 5
+docker exec veka-postgres pg_isready -U veka && ok "PostgreSQL ready" || warn "PostgreSQL may still be starting"
+
 VM_IP=$(hostname -I | awk '{print $1}')
 echo ""
 echo "============================================"
-echo "  veka-247 multi-channel stack is running"
+echo "  veka-247 stack is running"
 echo "============================================"
-echo "  ffplayout TTTR UI -> http://${VM_IP}:8787"
-echo "  ffplayout IGFV UI -> http://${VM_IP}:8788"
-echo "  ffplayout FH6 UI  -> http://${VM_IP}:8789"
-echo "  OBS Studio UI     -> http://${VM_IP}:3000"
-echo "  Restreamer UI     -> http://${VM_IP}:8080"
-echo "  IRL Ingest        -> rtmp://${VM_IP}:1935/live/irl"
+echo ""
+echo "  Dashboard       -> http://${VM_IP}:3000"
+echo "  Backend API     -> http://${VM_IP}:8000"
+echo "  ffplayout TTTR  -> http://${VM_IP}:8787"
+echo "  ffplayout IGFV  -> http://${VM_IP}:8788"
+echo "  ffplayout FH6   -> http://${VM_IP}:8789"
+echo "  ffplayout VA    -> http://${VM_IP}:8790"
+echo "  Restreamer      -> http://${VM_IP}:8080"
+echo "  MediaMTX HLS    -> http://${VM_IP}:8888"
+echo "  IRL Ingest      -> rtmp://${VM_IP}:1935/live/irl"
 echo ""
 echo "  Next steps:"
-echo "  1. Drop clips into /srv/clips/tttr, /igfv, /fh6"
-echo "  2. Open OBS Studio UI and configure scenes"
-echo "  3. Open Restreamer UI and add outputs"
+echo "  1. Open Restreamer UI (:8080) and add Twitch/YouTube/Kick outputs"
+echo "  2. Drop clips into /srv/clips/{tttr,igfv,fh6,va}"
+echo "  3. Use Dashboard (:3000) to manage channels and platforms"
 echo "  4. Run scripts/status.sh to check health"
 echo "============================================"

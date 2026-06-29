@@ -1,1 +1,9 @@
 .env
+node_modules/
+.svelte-kit/
+build/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+*.db

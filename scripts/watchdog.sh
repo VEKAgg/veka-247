@@ -1,49 +1,88 @@
 #!/usr/bin/env bash
-# watchdog.sh — health check for the veka-247 stack
+# watchdog.sh — health check for the veka-247 multi-channel stack
 # Runs every 2 minutes via ffplayout-watchdog.timer
-# Restarts ffplayout if it has stopped; logs to systemd journal
 
 set -euo pipefail
 
-STREAM_KEY="247live"
+COMPOSE_DIR="/opt/247live/docker"
+CHANNELS="tttr igfv fh6 va"
 RTMP_PORT=1935
-
-check_ffplayout() {
-  if ! systemctl is-active --quiet ffplayout; then
-    echo "WATCHDOG: ffplayout is not active — restarting"
-    systemctl restart ffplayout
-    return 1
-  fi
-  return 0
-}
-
-check_rtmp_port() {
-  # Verify Restreamer RTMP port is accepting connections
-  if ! ss -tlnp | grep -q ":${RTMP_PORT}"; then
-    echo "WATCHDOG: Restreamer RTMP port ${RTMP_PORT} not listening — check Docker container"
-    docker ps --filter "name=restreamer" --format "{{.Names}} {{.Status}}" | \
-      grep -q "Up" || docker compose -f /opt/247live/docker/docker-compose.yml up -d
-    return 1
-  fi
-  return 0
-}
-
-check_clips() {
-  CLIP_COUNT=$(find /srv/clips -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.mov' \) 2>/dev/null | wc -l)
-  if [ "$CLIP_COUNT" -eq 0 ]; then
-    echo "WATCHDOG: No clips found in /srv/clips — stream has nothing to play"
-    return 1
-  fi
-  return 0
-}
-
 ERRORS=0
-check_ffplayout  || ERRORS=$((ERRORS + 1))
-check_rtmp_port  || ERRORS=$((ERRORS + 1))
-check_clips      || ERRORS=$((ERRORS + 1))
+
+# ── Check Docker is running ──────────────────────────────────────────────────
+check_docker() {
+  if ! docker info &>/dev/null; then
+    echo "WATCHDOG: Docker is not running"
+    return 1
+  fi
+  return 0
+}
+
+# ── Check all containers are up ──────────────────────────────────────────────
+check_containers() {
+  local all_up=true
+  for svc in backend dashboard postgres mediamtx ffplayout-tttr ffplayout-igfv ffplayout-fh6 ffplayout-va restreamer; do
+    if ! docker ps --filter "name=^${svc}$" --format "{{.Status}}" | grep -q "Up"; then
+      echo "WATCHDOG: Container $svc is NOT running"
+      all_up=false
+    fi
+  done
+  if [ "$all_up" = false ]; then
+    echo "WATCHDOG: Restarting stack..."
+    cd "$COMPOSE_DIR" && docker compose up -d
+    return 1
+  fi
+  return 0
+}
+
+# ── Check MediaMTX RTMP port ────────────────────────────────────────────────
+check_mediamtx() {
+  if ! ss -tlnp | grep -q ":${RTMP_PORT}"; then
+    echo "WATCHDOG: MediaMTX RTMP port ${RTMP_PORT} not listening"
+    return 1
+  fi
+  return 0
+}
+
+# ── Check PostgreSQL ─────────────────────────────────────────────────────────
+check_postgres() {
+  if ! docker exec veka-postgres pg_isready -U veka &>/dev/null; then
+    echo "WATCHDOG: PostgreSQL is not responding"
+    return 1
+  fi
+  return 0
+}
+
+# ── Check clips per channel ─────────────────────────────────────────────────
+check_clips() {
+  for ch in $CHANNELS; do
+    count=$(find /srv/clips/"$ch" -maxdepth 1 -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.mov' -o -name '*.avi' -o -name '*.flv' -o -name '*.ts' \) 2>/dev/null | wc -l)
+    if [ "$count" -eq 0 ]; then
+      echo "WATCHDOG: No clips in /srv/clips/$ch"
+    fi
+  done
+  return 0
+}
+
+# ── Check NFS mount ─────────────────────────────────────────────────────────
+check_nfs() {
+  if ! mountpoint -q /srv/clips; then
+    echo "WATCHDOG: /srv/clips is not mounted (NFS may be down)"
+    return 1
+  fi
+  return 0
+}
+
+# ── Run all checks ──────────────────────────────────────────────────────────
+check_docker    || ERRORS=$((ERRORS + 1))
+check_containers || ERRORS=$((ERRORS + 1))
+check_mediamtx  || ERRORS=$((ERRORS + 1))
+check_postgres  || ERRORS=$((ERRORS + 1))
+check_nfs       || ERRORS=$((ERRORS + 1))
+check_clips
 
 if [ "$ERRORS" -eq 0 ]; then
-  echo "WATCHDOG: OK — ffplayout running, RTMP up, ${CLIP_COUNT:-?} clips available"
+  echo "WATCHDOG: OK — all services running"
 fi
 
 exit 0
