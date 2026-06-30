@@ -2,20 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
-from database import get_db
-from models import Channel, ChannelAlert, WebhookLog
+from database import get_db, AsyncSessionLocal
+from models import Channel, ChannelAlert, WebhookLog, AlertTemplate
 from schemas import (
     AlertConfigCreate, AlertConfigUpdate, AlertConfigResponse,
     AlertEvent, MessageResponse,
 )
+from services.alert_engine import dispatch_alert
 
 router = APIRouter()
 
 
 @router.get("/templates")
 async def list_templates():
-    from models import AlertTemplate
-    from database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(AlertTemplate).order_by(AlertTemplate.name))
         return [
@@ -96,7 +95,6 @@ async def test_alert(channel_id: UUID, event: AlertEvent, db: AsyncSession = Dep
     if not ch:
         raise HTTPException(status_code=404, detail="Channel not found")
 
-    from services.alert_engine import dispatch_alert
     await dispatch_alert(ch, event)
     return MessageResponse(message=f"Test alert dispatched to '{ch.slug}'")
 
@@ -119,7 +117,6 @@ async def _process_webhook(channel_id: UUID, provider: str, request: Request, db
         log.event_type = event.type
         await db.flush()
 
-        from services.alert_engine import dispatch_alert
         await dispatch_alert(ch, event)
         return {"status": "ok"}
     else:

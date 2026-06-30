@@ -1,5 +1,5 @@
 import asyncio
-import subprocess
+import os
 import signal
 from pathlib import Path
 from models import Channel
@@ -28,13 +28,11 @@ async def stop_ffplayout(channel: Channel):
     if pid_file.exists():
         pid = int(pid_file.read_text().strip())
         try:
-            import os
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
         pid_file.unlink(missing_ok=True)
 
-    import os
     for proc_name in ["ffplayout", f"ffplayout-{channel.slug}"]:
         result = await asyncio.create_subprocess_exec(
             "pkill", "-f", proc_name,
@@ -52,7 +50,6 @@ async def get_process_status(channel: Channel) -> dict:
     if pid_file.exists():
         pid = int(pid_file.read_text().strip())
         try:
-            import os
             os.kill(pid, 0)
             is_running = True
         except (ProcessLookupError, PermissionError):

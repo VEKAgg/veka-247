@@ -1,3 +1,4 @@
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -32,7 +33,6 @@ async def create_platform(channel_id: UUID, data: PlatformCreate, db: AsyncSessi
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Platform '{data.platform_type}' already exists for this channel")
 
-    import hashlib
     key_hash = hashlib.sha256(data.stream_key.encode()).hexdigest()
 
     platform = Platform(
@@ -61,7 +61,6 @@ async def update_platform(
 
     for key, value in data.model_dump(exclude_unset=True).items():
         if key == "stream_key" and value:
-            import hashlib
             platform.stream_key_enc = hashlib.sha256(value.encode()).hexdigest()
         else:
             setattr(platform, key, value)

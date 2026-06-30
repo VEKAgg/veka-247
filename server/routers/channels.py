@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 from database import get_db
+from config import settings
 from models import Channel, Platform
 from schemas import (
     ChannelCreate, ChannelUpdate, ChannelResponse,
     ChannelWithPlatforms, ChannelDetail, MessageResponse,
 )
 from services.clip_scanner import count_clips
+from services.ffmpeg_manager import start_ffplayout, stop_ffplayout, get_process_status
 
 router = APIRouter()
 
@@ -80,7 +82,6 @@ async def start_channel(channel_id: UUID, db: AsyncSession = Depends(get_db)):
     ch = result.scalar_one_or_none()
     if not ch:
         raise HTTPException(status_code=404, detail="Channel not found")
-    from services.ffmpeg_manager import start_ffplayout
     pid = await start_ffplayout(ch)
     ch.status = "running"
     ch.process_pid = pid
@@ -94,7 +95,6 @@ async def stop_channel(channel_id: UUID, db: AsyncSession = Depends(get_db)):
     ch = result.scalar_one_or_none()
     if not ch:
         raise HTTPException(status_code=404, detail="Channel not found")
-    from services.ffmpeg_manager import stop_ffplayout
     await stop_ffplayout(ch)
     ch.status = "stopped"
     ch.process_pid = None
@@ -108,6 +108,5 @@ async def channel_status(channel_id: UUID, db: AsyncSession = Depends(get_db)):
     ch = result.scalar_one_or_none()
     if not ch:
         raise HTTPException(status_code=404, detail="Channel not found")
-    from services.ffmpeg_manager import get_process_status
     status = await get_process_status(ch)
     return status

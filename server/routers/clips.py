@@ -1,4 +1,4 @@
-import os
+import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,11 +7,9 @@ from uuid import UUID
 from database import get_db
 from models import Channel, Clip
 from schemas import ClipResponse, MessageResponse
-from config import settings
+from services.clip_scanner import VIDEO_EXTENSIONS, scan_folder, regenerate_concat_list
 
 router = APIRouter()
-
-ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".flv", ".ts"}
 
 
 @router.get("/{channel_id}/clips", response_model=list[ClipResponse])
@@ -34,19 +32,21 @@ async def upload_clips(channel_id: UUID, files: list[UploadFile] = File(...), db
     created = []
     for file in files:
         ext = Path(file.filename).suffix.lower()
-        if ext not in ALLOWED_EXTENSIONS:
+        if ext not in VIDEO_EXTENSIONS:
             continue
 
         dest = clip_dir / file.filename
-        content = await file.read()
+        file_size = 0
         with open(dest, "wb") as f:
-            f.write(content)
+            while chunk := await file.read(1024 * 1024):
+                f.write(chunk)
+                file_size += len(chunk)
 
         clip = Clip(
             channel_id=channel_id,
             filename=file.filename,
             filepath=str(dest),
-            file_size_bytes=len(content),
+            file_size_bytes=file_size,
             status="ready",
         )
         db.add(clip)
@@ -56,7 +56,6 @@ async def upload_clips(channel_id: UUID, files: list[UploadFile] = File(...), db
     for clip in created:
         await db.refresh(clip)
 
-    from services.clip_scanner import regenerate_concat_list
     await regenerate_concat_list(ch)
 
     return created
@@ -80,7 +79,6 @@ async def delete_clip(channel_id: UUID, clip_id: UUID, db: AsyncSession = Depend
 
     ch = await db.get(Channel, channel_id)
     if ch:
-        from services.clip_scanner import regenerate_concat_list
         await regenerate_concat_list(ch)
 
     return MessageResponse(message=f"Clip '{clip.filename}' deleted")
@@ -92,7 +90,6 @@ async def scan_clips(channel_id: UUID, db: AsyncSession = Depends(get_db)):
     if not ch:
         raise HTTPException(status_code=404, detail="Channel not found")
 
-    from services.clip_scanner import scan_folder, regenerate_concat_list
     new_clips = await scan_folder(ch, db)
     await regenerate_concat_list(ch)
 

@@ -1,7 +1,7 @@
 import asyncio
-import subprocess
 from pathlib import Path
 from models import Channel
+from services.alert_engine import _ensure_overlay_template
 
 _overlay_processes: dict[str, asyncio.subprocess.Process] = {}
 
@@ -14,10 +14,7 @@ async def start_overlay(channel: Channel):
 
     overlay_dir = Path(f"/overlays/channel-{channel.slug}")
     overlay_dir.mkdir(parents=True, exist_ok=True)
-
-    alert_html = overlay_dir / "alert.html"
-    if not alert_html.exists():
-        _create_default_overlay(alert_html)
+    _ensure_overlay_template(overlay_dir, channel.slug)
 
     cmd = [
         "ffmpeg",
@@ -75,53 +72,3 @@ async def _capture_frames(slug: str):
         pass
     except Exception:
         pass
-
-
-def _create_default_overlay(path: Path):
-    html = """<!DOCTYPE html>
-<html>
-<head>
-<style>
-body { background: transparent; margin: 0; overflow: hidden; }
-.alert {
-  position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 0;
-  padding: 20px 40px;
-  background: rgba(0,0,0,0.85);
-  border: 2px solid #FFD700;
-  border-radius: 16px;
-}
-.alert.active {
-  animation: slideUp 0.5s ease-out forwards, fadeOut 0.5s ease-in 9s forwards;
-}
-.alert-name { font-size: 36px; font-weight: bold; color: #FFD700; }
-.alert-message { font-size: 24px; color: #fff; margin-top: 4px; }
-@keyframes slideUp {
-  from { transform: translateX(-50%) translateY(100px); opacity: 0; }
-  to { transform: translateX(-50%) translateY(0); opacity: 1; }
-}
-@keyframes fadeOut { to { opacity: 0; } }
-</style>
-</head>
-<body>
-<div id="alert" class="alert">
-  <div class="alert-name" id="alert-name"></div>
-  <div class="alert-message" id="alert-message"></div>
-</div>
-<script>
-const ws = new WebSocket('ws://backend:8000/ws/overlay/CHANNEL_SLUG');
-ws.onmessage = (e) => {
-  const d = JSON.parse(e.data);
-  document.getElementById('alert-name').textContent = d.name;
-  document.getElementById('alert-message').textContent = d.message;
-  const a = document.getElementById('alert');
-  a.classList.add('active');
-  setTimeout(() => a.classList.remove('active'), d.duration * 1000);
-};
-</script>
-</body>
-</html>"""
-    path.write_text(html.replace("CHANNEL_SLUG", path.parent.name.replace("channel-", "")))

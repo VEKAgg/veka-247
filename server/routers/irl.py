@@ -4,19 +4,18 @@ from uuid import UUID
 from database import get_db
 from models import Channel
 from schemas import IRLStatus, MessageResponse
+from services.irl_relay import get_irl_status, start_irl_relay, stop_irl_relay
 
 router = APIRouter()
 
 
 @router.get("/status", response_model=IRLStatus)
 async def irl_status():
-    from services.irl_relay import get_irl_status
     return await get_irl_status()
 
 
 @router.post("/start", response_model=MessageResponse)
 async def start_irl(channel_id: UUID = None, db: AsyncSession = Depends(get_db)):
-    from services.irl_relay import start_irl_relay
     if channel_id:
         ch = await db.get(Channel, channel_id)
         if not ch:
@@ -30,6 +29,5 @@ async def start_irl(channel_id: UUID = None, db: AsyncSession = Depends(get_db))
 
 @router.post("/stop", response_model=MessageResponse)
 async def stop_irl():
-    from services.irl_relay import stop_irl_relay
     await stop_irl_relay()
     return MessageResponse(message="IRL relay stopped")

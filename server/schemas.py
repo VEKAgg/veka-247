@@ -1,39 +1,7 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from uuid import UUID
-
-
-# ── User ─────────────────────────────────────────────────────────────────────
-class UserBase(BaseModel):
-    username: str
-    email: str
-    display_name: Optional[str] = None
-    role: str = "admin"
-
-
-class UserCreate(UserBase):
-    password: str
-
-
-class UserResponse(UserBase):
-    id: UUID
-    is_active: bool
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# ── Auth ─────────────────────────────────────────────────────────────────────
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
 
 # ── Channel ──────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import json
+import asyncio
 from pathlib import Path
 from models import Channel
 from schemas import AlertEvent
@@ -21,14 +22,10 @@ async def dispatch_alert(channel: Channel, event: AlertEvent):
     alert_file = overlay_dir / "current_alert.json"
     alert_file.write_text(json.dumps(alert_data))
 
-    overlay_html = _generate_overlay_html(alert_data)
-    (overlay_dir / "alert.html").write_text(overlay_html)
+    _ensure_overlay_template(overlay_dir, channel.slug)
 
-    overlay_css = _generate_overlay_css(event.type)
-    (overlay_dir / "alert.css").write_text(overlay_css)
-
-    import asyncio
-    asyncio.get_event_loop().call_later(
+    loop = asyncio.get_running_loop()
+    loop.call_later(
         event.duration,
         lambda: _clear_alert(overlay_dir),
     )
@@ -40,55 +37,28 @@ def _clear_alert(overlay_dir: Path):
         alert_file.write_text(json.dumps({"type": None, "name": "", "message": ""}))
 
 
-def _generate_overlay_html(data: dict) -> str:
-    message = data.get("message", "")
-    name = data.get("name", "")
-    amount = data.get("amount", 0)
+def _ensure_overlay_template(overlay_dir: Path, slug: str):
+    html_file = overlay_dir / "alert.html"
+    if html_file.exists():
+        return
 
-    if data["type"] == "donation":
-        display = f"{name} donated ${amount:.2f}!"
-    elif data["type"] == "follow":
-        display = f"{name} is now following!"
-    elif data["type"] == "subscription":
-        display = f"{name} subscribed!"
-    elif data["type"] == "raid":
-        display = f"{name} raided with {amount} viewers!"
-    else:
-        display = message or f"{name} triggered an alert!"
-
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-<link rel="stylesheet" href="alert.css">
-</head>
-<body>
-<div id="alert" class="alert alert-{data['type']}">
-  <div class="alert-icon">
-    <img src="assets/{data['type']}.png" onerror="this.style.display='none'">
-  </div>
-  <div class="alert-content">
-    <div class="alert-name">{name}</div>
-    <div class="alert-message">{display}</div>
-  </div>
-</div>
-</body>
-</html>"""
+    html_file.write_text(_OVERLAY_HTML_TEMPLATE.replace("CHANNEL_SLUG", slug))
+    (overlay_dir / "alert.css").write_text(_OVERLAY_CSS_TEMPLATE)
 
 
-def _generate_overlay_css(alert_type: str) -> str:
-    colors = {
-        "donation": "#FFD700",
-        "follow": "#9146FF",
-        "subscription": "#00AD03",
-        "raid": "#FF4500",
-        "cheer": "#FF6B00",
-    }
-    color = colors.get(alert_type, "#FFFFFF")
+_ALERT_COLORS = {
+    "donation": "#FFD700",
+    "follow": "#9146FF",
+    "subscription": "#00AD03",
+    "raid": "#FF4500",
+    "cheer": "#FF6B00",
+}
 
-    return f"""* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ background: transparent; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }}
+_OVERLAY_CSS_TEMPLATE = """\
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: transparent; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }
 
-.alert {{
+.alert {
   position: fixed;
   bottom: 80px;
   left: 50%;
@@ -99,39 +69,112 @@ body {{ background: transparent; overflow: hidden; font-family: 'Segoe UI', Aria
   gap: 20px;
   padding: 20px 40px;
   background: rgba(0, 0, 0, 0.85);
-  border: 2px solid {color};
+  border: 2px solid #FFD700;
   border-radius: 16px;
-  box-shadow: 0 0 30px {color}40, 0 8px 32px rgba(0,0,0,0.6);
-  animation: slideUp 0.5s ease-out 0.1s forwards, fadeOut 0.5s ease-in 9s forwards;
-}}
+  box-shadow: 0 0 30px rgba(255,215,0,0.25), 0 8px 32px rgba(0,0,0,0.6);
+}
 
-.alert-icon img {{
+.alert.active {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+.alert.fade-out {
+  animation: fadeOut 0.5s ease-in forwards;
+}
+
+.alert-icon img {
   width: 80px;
   height: 80px;
-}}
+}
 
-.alert-content {{
-  text-align: left;
-}}
+.alert-content { text-align: left; }
 
-.alert-name {{
+.alert-name {
   font-size: 36px;
   font-weight: bold;
-  color: {color};
+  color: #FFD700;
   text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-}}
+}
 
-.alert-message {{
+.alert-message {
   font-size: 24px;
   color: #ffffff;
   margin-top: 4px;
-}}
+}
 
-@keyframes slideUp {{
-  from {{ transform: translateX(-50%) translateY(100px); opacity: 0; }}
-  to {{ transform: translateX(-50%) translateY(0); opacity: 1; }}
-}}
+@keyframes slideUp {
+  from { transform: translateX(-50%) translateY(100px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
 
-@keyframes fadeOut {{
-  to {{ opacity: 0; }}
-}}"""
+@keyframes fadeOut {
+  to { opacity: 0; }
+}"""
+
+_OVERLAY_HTML_TEMPLATE = """\
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="alert.css">
+</head>
+<body>
+<div id="alert" class="alert">
+  <div class="alert-icon">
+    <img id="alert-icon-img" src="" onerror="this.style.display='none'">
+  </div>
+  <div class="alert-content">
+    <div class="alert-name" id="alert-name"></div>
+    <div class="alert-message" id="alert-message"></div>
+  </div>
+</div>
+<script>
+const COLORS = {
+  donation: '#FFD700',
+  follow: '#9146FF',
+  subscription: '#00AD03',
+  raid: '#FF4500',
+  cheer: '#FF6B00',
+};
+
+let fadeTimeout = null;
+
+function showAlert(d) {
+  const el = document.getElementById('alert');
+  const nameEl = document.getElementById('alert-name');
+  const msgEl = document.getElementById('alert-message');
+  const iconImg = document.getElementById('alert-icon-img');
+
+  const color = COLORS[d.type] || '#FFFFFF';
+  el.style.borderColor = color;
+  el.style.boxShadow = '0 0 30px ' + color + '40, 0 8px 32px rgba(0,0,0,0.6)';
+  nameEl.style.color = color;
+
+  nameEl.textContent = d.name || '';
+  msgEl.textContent = d.message || '';
+
+  if (d.image) {
+    iconImg.src = d.image;
+    iconImg.style.display = '';
+  } else {
+    iconImg.style.display = 'none';
+  }
+
+  el.classList.remove('fade-out');
+  el.classList.add('active');
+
+  if (fadeTimeout) clearTimeout(fadeTimeout);
+  fadeTimeout = setTimeout(() => {
+    el.classList.remove('active');
+    el.classList.add('fade-out');
+  }, Math.max((d.duration || 10) - 1, 0) * 1000);
+}
+
+const ws = new WebSocket('ws://' + location.hostname + ':8000/ws/overlay/CHANNEL_SLUG');
+ws.onmessage = (e) => {
+  const d = JSON.parse(e.data);
+  if (d.type) showAlert(d);
+};
+ws.onerror = () => setTimeout(() => location.reload(), 5000);
+</script>
+</body>
+</html>"""

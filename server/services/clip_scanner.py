@@ -1,4 +1,3 @@
-import subprocess
 from pathlib import Path
 from models import Channel
 from sqlalchemy.ext.asyncio import AsyncSession

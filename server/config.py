@@ -10,8 +10,6 @@ class Settings(BaseSettings):
     hls_base_url: str = "http://localhost:8888"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    secret_key: str = "veka-secret-change-in-production"
-    access_token_expire_minutes: int = 1440
 
     class Config:
         env_file = ".env"
