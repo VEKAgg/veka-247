@@ -5,7 +5,6 @@
 
 set -euo pipefail
 
-STREAM_KEY="247live"
 RTMP_PORT=1935
 
 check_ffplayout() {
